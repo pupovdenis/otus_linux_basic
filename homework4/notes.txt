@@ -1,0 +1,147 @@
+
+Установка MySql
+apt install mysql-server-8.0
+
+Проверка портов
+ss -ntlp
+настройка имени хоста
+hostnamectl set-hostname mysql-master
+reboot
+
+Запускаем скрипт безопасности для MySql
+mysql_secure installation
+
+заход в root-аккаунт
+sudo mysql-master
+
+
+
+
+проверить связь между серверами (мост)
+	ip a
+	ping *
+
+apt install mysql-server-8.0
+
+проверитьсокеты (3306)
+	ss -ntlp
+
+проверить процесс (myslqd)
+	ps afx
+
+проверить службу
+	systemctl status mysql
+
+mysql> / mysql -utest_user -p
+команды:
+	show databases;
+	use mysql;
+	show tables;
+	select * from user\G
+
+В mysql позьзователь включает хост - откуда пользователь
+Установка пароля шаблон
+	alter user 'root'@'localhost' identified with 'caching_sha2_password' by 'Testpass1$';
+	раздача прав
+		grant all test_db.* to test_user@'%';
+	проверка = наличия данных в поле authentication_string в таблице mysql.user у пользователя
+	проверка = show grants for test_user@'%';
+
+Файловая структура:
+	настройки системные					/etc/mysql/mysql.conf.d/		/etc/mysql/conf.d/
+	базы данных, бинлоги, сертификаты	/var/lib/mysql
+										binlog.000001
+										binlog.000002
+	настройки клиента					~/.my.cnf (можно добавить логин пароль для быстрого входа)
+
+Настройка сервера
+1. /etc/mysql/mysql.conf.d/mysqld.cnf (наличие '[mysqld]' - сервер)
+	параметры сокета, который открываем
+		bind-address = 0.0.0.0
+			-> service mysql restart -> проверить наличие процесса
+	проверить ss -ntlp
+		0.0.0.0:3306
+2. 	/etc/mysql/mysql.conf.d/mysql.cnf
+	server-id = 1 (из #)
+	gtid-mode = ON
+	enforce-gtid-consistency
+	log-replica-updates
+	binlog_expire_logs_seconds (из #)
+	-> service mysql restart -> проверить наличие процесса
+3.	mysql>
+		создание пользователя для репликации
+			create user repl@'%' identified with 'caching_sha2_password' by 'ReplicaPass#2000';
+			grant replication slave on *.* to repl@'%';
+				проверить:
+					select user, host from mysql.user;
+					show master status;
+
+
+Настройка бинарных логов
+	размер кэша в памяти
+		binlog_cache_size
+	формат
+		binlog_format = ROW/STATEMENT/MIXED
+	шифрование
+		binlog_encryption
+	реакция на ощибку записи
+		binlog_error_action = ABORT_SERVER/IGNORE_ERROR
+	таймаут хранения в секундах
+		binlog_expire_logs_seconds
+
+Порядок действий binlog position based replication
+1. Снимаем копию с мастера
+2. Проверяем позицию бинлога на мастере
+3. Создаем пользователя для репликации на мастере
+4. Меняем UUID (/var/lib/mysql/auto.cnf) если копировали машины
+5. Поднимаем копию на слейве
+6. Меняем server_id на слейве
+7. Запускаем команду CHANGE SOURCE
+
+Порядок действий (GTID replication)
+1. Снимаем копию с мастера
+3. Создаем пользователя для репликации на мастере
+4. Меняем UUID (/var/lib/mysql/auto.cnf) если копировали машины
+5. Поднимаем копию на слейве
+6. Меняем server_id на слейве
+7. Запускаем команду CHANGE SOURCE
+
+Конфиг Source GTID
+[mysqld]
+server-id = 1
+log-bin = mysql-bin
+binlog-format = row
+gtid-mode = ON
+enforce-gtid-consistency
+log-replica-updates
+
+
+Настройка реплики:
+1. /etc/mysql/mysql.conf.d/mysqld.cnf
+	server-id = 2 (из #)
+	binlog_expire_logs_seconds (из #)
+	relay-log = relay-log-server
+	read-only = ON (изменения только от мастера)
+	gtid-mode = ON
+	enforce-gtid-consistency
+	log-replica-updates
+	-> service mysql restart -> проверить наличие процесса
+2. Запуск репликации
+	mysql>
+		stop replica;
+		change replication source to source_host='51.250.47.187', source_user='repl', source_password='ReplicaPass#2000', source_auto_position = 1, get_source_public_key = 1; (source_host = 'ip a' на мастере)
+		start replica;
+		show replica status\G - проверяем source_host, source_user, source_port
+
+backup:
+	логический(mysqldump и пр.) и физический(binlog)
+
+восстановление с sql (логический backup)
+    на source: mysql < backup_test_db.sql
+    проверка на реплике: show replica status\G
+    все базы данных: mysqldump --all-databases
+
+    бд расположены: /var/lib/mysql/test_db/some_table.ibd
+    дамп таблицы: mysqldump test_db some_table.ibd [some_table2.ibd] > /home/db/backup.sql
+    чтобы при восстановлении не было ругани на транзакции (в режиме gtid): mysqldump --set-gtid-purged=COMMENTED test_db test_table > /home/db/backup.sql, проверить nano /home/db/backup.sql
+
