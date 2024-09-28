@@ -1,0 +1,22 @@
+#eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP group default qlen 1000
+#  link/ether d0:0d:74:09:55:bc brd ff:ff:ff:ff:ff:ff
+#  altname enp138s0
+#  altname ens8
+#  inet 10.131.0.22/24 metric 100 brd 10.131.0.255 scope global dynamic eth0
+#  valid_lft 4294924979sec preferred_lft 4294924979sec
+#  inet6 fe80::d20d:74ff:fe09:55bc/64 scope link
+#  valid_lft forever preferred_lft forever
+network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    eth0:
+      dhcp4: no
+      addresses: [10.131.0.22/24]
+      routes:
+        - to: default
+          via: 10.131.0.1
+      nameservers:
+        addresses:
+          - 8.8.8.8
+          - 8.8.4.4
